@@ -33,13 +33,16 @@ def count_chat_tokens(tokenizer, system_prompt: str, question: str,
         {"role": "user",   "content": question},
         {"role": "assistant", "content": trace_text},
     ]
-    rendered = tokenizer.apply_chat_template(messages, tokenize=False)
+    rendered = tokenizer.apply_chat_template(
+        messages, tokenize=False, enable_thinking=False,
+    )
     return len(tokenizer(rendered)["input_ids"])
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--config", default="/home/liuyu/Projects/GRPO_research/VCTS/lzl/mllm_config.yaml")
+    ap.add_argument("--config", type=str, default=None,
+                    help="Defaults to LZL_CONFIG env or lzl/config.yaml")
     args = ap.parse_args()
 
     cfg = load_config(args.config)

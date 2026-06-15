@@ -57,7 +57,9 @@ def count_tokens(tokenizer, text: str, system_prompt: str) -> int:
         {"role": "user", "content": "X"},
         {"role": "assistant", "content": text},
     ]
-    rendered = tokenizer.apply_chat_template(messages, tokenize=False)
+    rendered = tokenizer.apply_chat_template(
+        messages, tokenize=False, enable_thinking=False,
+    )
     return len(tokenizer(rendered)["input_ids"])
 
 

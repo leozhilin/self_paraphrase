@@ -16,16 +16,19 @@ Images are materialised under ``<image_root>/<dataset>/<question_id>.png`` so
 that downstream pipeline (rollout / paraphrase / eval) can load them by path
 without re-decoding from HF cache.
 
-For HF gated datasets (HLE) export ``HF_TOKEN`` before running.
+Raw HF caches land under ``/data5/lzl/hf_cache``; materialised images under
+``/data5/lzl/datasets/mllm``; eval JSONL under ``data/mllm/eval/``.
 """
 
 from __future__ import annotations
 
 import argparse
+import ast
 import base64
 import io
 import json
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -126,14 +129,13 @@ def _ai2d_row(ex, idx, split, img_dir) -> dict | None:
 
 
 def export_ai2d(image_root: Path, eval_dir: Path, limit: int | None = None):
-    """AI2D eval-only: materialise the held-out 20% as ``ai2d_test_eval.jsonl``."""
+    """AI2D eval-only: full HF ``test`` split → ``ai2d_test_eval.jsonl``."""
     img_dir = image_root / "ai2d"
     print(f"\n[AI2D] downloading (eval split only)...", flush=True)
     ds = load_dataset("lmms-lab/ai2d", split="test")
     n = len(ds) if limit is None else min(limit, len(ds))
-    cutoff = int(n * 0.8)
     test_rows = []
-    for i in range(cutoff, n):
+    for i in range(n):
         row = _ai2d_row(ds[i], i, "test", img_dir)
         if row is None:
             continue
@@ -229,6 +231,71 @@ def export_pgps9k(image_root: Path, train_jsonl: Path,
     _write_jsonl(rows, train_jsonl)
 
 
+def _export_pgps9k_split(image_root: Path, eval_dir: Path, pgps9k_root: Path,
+                         split: str, limit: int | None = None) -> None:
+    src_root = Path(pgps9k_root)
+    split_json = src_root / "PGPS9K" / f"{split}.json"
+    src_img_dir = src_root / "Diagram_Visual"
+    if not split_json.exists():
+        sys.exit(f"PGPS9K {split}.json not found: {split_json}")
+
+    img_dir = image_root / "pgps9k"
+    print(f"\n[PGPS9K] formatting {split} from {split_json}...", flush=True)
+    raw = json.load(split_json.open())
+    items = list(raw.items())
+    if limit is not None:
+        items = items[:limit]
+
+    rows: list[dict] = []
+    skipped = 0
+    for idx, (prob_id, ex) in enumerate(items):
+        choices = ex.get("choices") or []
+        if len(choices) < 2:
+            skipped += 1
+            continue
+        ans_idx = _pgps9k_choice_index(ex.get("answer", ""), choices)
+        if ans_idx is None or ans_idx >= len(choices):
+            skipped += 1
+            continue
+        diagram = ex.get("diagram") or ""
+        src_img = src_img_dir / diagram
+        if not src_img.exists():
+            skipped += 1
+            continue
+
+        qid = f"pgps9k_{split}_{idx:05d}"
+        dest = img_dir / f"{qid}.png"
+        if not dest.exists():
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src_img, dest)
+
+        opts = [str(c) for c in choices]
+        rows.append({
+            "question_id": qid,
+            "image_path":  str(dest),
+            "question":    render_mc_question(str(ex.get("text", "")).strip(), opts),
+            "answer":      LETTERS[ans_idx],
+            "source":      f"pgps9k_{split}",
+            "meta":        {
+                "prob_id":        prob_id,
+                "options_text":   opts,
+                "answer_text":    opts[ans_idx],
+                "numeric_answer": str(ex.get("answer", "")).strip(),
+                "problem_type":   ex.get("type"),
+                "book":           ex.get("book"),
+            },
+        })
+    if skipped:
+        print(f"  [PGPS9K {split}] skipped {skipped} rows", flush=True)
+    out = eval_dir / f"pgps9k_{split}_eval.jsonl"
+    _write_jsonl(rows, out)
+
+
+def export_pgps9k_test(image_root: Path, eval_dir: Path, pgps9k_root: Path,
+                       limit: int | None = None):
+    _export_pgps9k_split(image_root, eval_dir, pgps9k_root, "test", limit)
+
+
 # ---------------------------------------------------------------------------
 # MMMU-Pro standard (4 options).  Multi-image: image_1..7. Use all non-None.
 # ---------------------------------------------------------------------------
@@ -269,73 +336,6 @@ def export_mmmu_pro(image_root: Path, eval_dir: Path, limit: int | None = None):
                             "topic_difficulty": ex.get("topic_difficulty")},
         })
     _write_jsonl(rows, eval_dir / "mmmu_pro_eval.jsonl")
-
-
-# ---------------------------------------------------------------------------
-# DocVQA validation. Schema: questionId / question / image / answers(list)
-# ---------------------------------------------------------------------------
-
-def export_docvqa(image_root: Path, eval_dir: Path, limit: int | None = None):
-    img_dir = image_root / "docvqa"
-    print(f"\n[DocVQA] downloading (validation split — large)...", flush=True)
-    ds = load_dataset("lmms-lab/DocVQA", "DocVQA", split="validation")
-    n = len(ds) if limit is None else min(limit, len(ds))
-    rows = []
-    for i in range(n):
-        ex = ds[i]
-        qid = f"docvqa_val_{ex.get('questionId', i)}"
-        p = _save_image(ex.get("image"), img_dir / f"{qid}.png")
-        # gold = first answer; full answer list kept in meta
-        anss = ex.get("answers") or []
-        gold = str(anss[0]).strip() if anss else ""
-        rows.append({
-            "question_id": qid,
-            "image_path":  str(p) if p else None,
-            "question":    str(ex["question"]).strip(),
-            "answer":      gold,
-            "source":      "docvqa",
-            "meta":        {"all_answers": anss, "doc_id": ex.get("docId")},
-        })
-        if (i + 1) % 500 == 0:
-            print(f"  ... DocVQA {i+1}/{n}", flush=True)
-    _write_jsonl(rows, eval_dir / "docvqa_eval.jsonl")
-
-
-# ---------------------------------------------------------------------------
-# ScienceQA test.  Image may be None (text-only sub-questions).
-# ---------------------------------------------------------------------------
-
-def export_scienceqa(image_root: Path, eval_dir: Path, limit: int | None = None):
-    img_dir = image_root / "scienceqa"
-    print(f"\n[ScienceQA] downloading...", flush=True)
-    ds = load_dataset("derek-thomas/ScienceQA", split="test")
-    n = len(ds) if limit is None else min(limit, len(ds))
-    rows = []
-    for i in range(n):
-        ex = ds[i]
-        qid = f"sqa_{i:05d}"
-        p = _save_image(ex.get("image"), img_dir / f"{qid}.png")
-        choices = ex["choices"] or []
-        try:
-            ans_idx = int(ex.get("answer"))
-        except (TypeError, ValueError):
-            continue
-        if not choices or ans_idx < 0 or ans_idx >= len(choices):
-            continue
-        question = ex["question"].strip()
-        hint = (ex.get("hint") or "").strip()
-        if hint:
-            question = f"Hint: {hint}\n\n{question}"
-        rows.append({
-            "question_id": qid,
-            "image_path":  str(p) if p else None,
-            "question":    render_mc_question(question, choices),
-            "answer":      LETTERS[ans_idx],
-            "source":      "scienceqa",
-            "meta":        {"choices_text": choices, "subject": ex.get("subject"),
-                            "topic": ex.get("topic"), "grade": ex.get("grade")},
-        })
-    _write_jsonl(rows, eval_dir / "scienceqa_eval.jsonl")
 
 
 # ---------------------------------------------------------------------------
@@ -390,35 +390,174 @@ def export_mathverse(image_root: Path, eval_dir: Path, limit: int | None = None)
     _write_jsonl(rows, eval_dir / "mathverse_eval.jsonl")
 
 
-# ---------------------------------------------------------------------------
-# HLE — gated, requires HF_TOKEN. image is base64 string (or empty).
-# ---------------------------------------------------------------------------
+def _mathvista_metadata(ex: dict) -> dict:
+    md = ex.get("metadata") or {}
+    if isinstance(md, str):
+        try:
+            md = ast.literal_eval(md)
+        except Exception:
+            md = {}
+    return md if isinstance(md, dict) else {}
 
-def export_hle(image_root: Path, eval_dir: Path, limit: int | None = None):
-    img_dir = image_root / "hle"
-    print(f"\n[HLE] downloading (gated; requires HF_TOKEN)...", flush=True)
-    if not os.environ.get("HF_TOKEN"):
-        print("  [skip] HF_TOKEN not set; skipping HLE.", flush=True)
-        return
-    ds = load_dataset("cais/hle", split="test")
+
+def _mathvista_question(ex: dict) -> str:
+    q = (ex.get("query") or ex.get("question") or "").strip()
+    choices = ex.get("choices")
+    if choices and ex.get("question_type") == "multi_choice":
+        if isinstance(choices, str):
+            try:
+                choices = ast.literal_eval(choices)
+            except Exception:
+                choices = None
+        if isinstance(choices, (list, tuple)) and choices:
+            return render_mc_question(q, list(choices))
+    return q
+
+
+def export_mathvista_gps(image_root: Path, eval_dir: Path, limit: int | None = None):
+    """MathVista test split filtered to GPS (geometry problem solving) rows."""
+    img_dir = image_root / "mathvista_gps"
+    print(f"\n[MathVista-GPS] downloading test + filtering task=GPS...", flush=True)
+    ds = load_dataset("AI4Math/MathVista", split="test")
+    rows = []
+    for i, ex in enumerate(ds):
+        md = _mathvista_metadata(ex)
+        if md.get("task") != "geometry problem solving":
+            continue
+        qid = f"mathvista_gps_{ex.get('pid', i)}"
+        p = _save_image(ex.get("decoded_image") or ex.get("image"),
+                        img_dir / f"{qid}.png")
+        if not p:
+            continue
+        rows.append({
+            "question_id": qid,
+            "image_path":  str(p),
+            "question":    _mathvista_question(ex),
+            "answer":      str(ex["answer"]).strip(),
+            "source":      "mathvista_gps",
+            "meta":        {
+                "pid":           ex.get("pid"),
+                "question_type": ex.get("question_type"),
+                "answer_type":   ex.get("answer_type"),
+                "metadata":      md,
+            },
+        })
+        if limit is not None and len(rows) >= limit:
+            break
+    _write_jsonl(rows, eval_dir / "mathvista_gps_eval.jsonl")
+
+
+def export_mathvision(image_root: Path, eval_dir: Path, limit: int | None = None):
+    """MATH-V (MathVision) full test split — 3040 competition visual-math problems."""
+    img_dir = image_root / "mathvision"
+    print(f"\n[MATH-V] downloading test...", flush=True)
+    ds = load_dataset("MathLLMs/MathVision", split="test")
     n = len(ds) if limit is None else min(limit, len(ds))
     rows = []
     for i in range(n):
         ex = ds[i]
-        qid = ex.get("id") or f"hle_{i:05d}"
-        # image field is a base64 string; may be empty
-        p = _save_image(ex.get("image"), img_dir / f"{qid}.png")
-        atype = ex.get("answer_type", "")
+        qid = f"mathvision_{ex.get('id', i)}"
+        img = ex.get("decoded_image") or ex.get("image")
+        p = _save_image(img, img_dir / f"{qid}.png")
+        if not p:
+            continue
+        q = re.sub(r"<image\d*>", "", str(ex.get("question") or "")).strip()
+        opts = ex.get("options") or []
+        if isinstance(opts, str):
+            try:
+                opts = ast.literal_eval(opts)
+            except Exception:
+                opts = []
+        if opts:
+            q = render_mc_question(q, list(opts))
         rows.append({
             "question_id": qid,
-            "image_path":  str(p) if p else None,
-            "question":    str(ex["question"]).strip(),
+            "image_path":  str(p),
+            "question":    q,
             "answer":      str(ex["answer"]).strip(),
-            "source":      "hle",
-            "meta":        {"answer_type": atype, "category": ex.get("category"),
-                            "raw_subject": ex.get("raw_subject")},
+            "source":      "mathvision",
+            "meta":        {
+                "subject": ex.get("subject"),
+                "level":   ex.get("level"),
+                "options": list(opts) if opts else [],
+            },
         })
-    _write_jsonl(rows, eval_dir / "hle_eval.jsonl")
+    _write_jsonl(rows, eval_dir / "mathvision_eval.jsonl")
+
+
+_GEOQA_CHOICES_RE = re.compile(r"choices(\{.*?\})\.\s*", re.DOTALL)
+
+
+def _parse_geoqa_problem(problem: str) -> tuple[str, dict[str, str]]:
+    text = re.sub(r"^<image>\s*", "", (problem or "").strip())
+    m = _GEOQA_CHOICES_RE.search(text)
+    choices: dict[str, str] = {}
+    q = text
+    if m:
+        try:
+            raw = ast.literal_eval(m.group(1))
+            if isinstance(raw, dict):
+                choices = {str(k).upper(): str(v) for k, v in raw.items()}
+        except Exception:
+            pass
+        q = text[:m.start()].strip()
+    q = re.sub(r"请用 A、B、C、D 作答\.?\s*$", "", q).strip()
+    return q, choices
+
+
+def export_geoqa(image_root: Path, eval_dir: Path, limit: int | None = None):
+    """GeoQA official test split (755 MCQ) via LoadingBFX/GeoQA-ABCD."""
+    img_dir = image_root / "geoqa"
+    print(f"\n[GeoQA] downloading test...", flush=True)
+    ds = load_dataset("LoadingBFX/GeoQA-ABCD", split="test")
+    n = len(ds) if limit is None else min(limit, len(ds))
+    rows = []
+    for i in range(n):
+        ex = ds[i]
+        qid = f"geoqa_test_{i:05d}"
+        img = ex.get("images")
+        if isinstance(img, (list, tuple)):
+            img = img[0] if img else None
+        p = _save_image(img, img_dir / f"{qid}.png")
+        if not p:
+            continue
+        q_text, choices = _parse_geoqa_problem(ex.get("problem", ""))
+        question = render_mc_question(q_text, choices) if choices else q_text
+        rows.append({
+            "question_id": qid,
+            "image_path":  str(p),
+            "question":    question,
+            "answer":      str(ex["answer"]).strip().upper(),
+            "source":      "geoqa",
+            "meta":        {"choices_text": choices},
+        })
+    _write_jsonl(rows, eval_dir / "geoqa_test_eval.jsonl")
+
+
+def export_geometry3k(image_root: Path, eval_dir: Path, limit: int | None = None):
+    """Geometry3K test split (601 free-form geometry problems)."""
+    img_dir = image_root / "geometry3k"
+    print(f"\n[Geometry3K] downloading test...", flush=True)
+    ds = load_dataset("hiyouga/geometry3k", split="test")
+    n = len(ds) if limit is None else min(limit, len(ds))
+    rows = []
+    for i in range(n):
+        ex = ds[i]
+        qid = f"geometry3k_test_{i:05d}"
+        imgs = ex.get("images") or []
+        img = imgs[0] if imgs else None
+        p = _save_image(img, img_dir / f"{qid}.png")
+        if not p:
+            continue
+        q = re.sub(r"^<image>\s*", "", str(ex.get("problem") or "")).strip()
+        rows.append({
+            "question_id": qid,
+            "image_path":  str(p),
+            "question":    q,
+            "answer":      str(ex["answer"]).strip(),
+            "source":      "geometry3k",
+        })
+    _write_jsonl(rows, eval_dir / "geometry3k_test_eval.jsonl")
 
 
 # ---------------------------------------------------------------------------
@@ -426,14 +565,16 @@ def export_hle(image_root: Path, eval_dir: Path, limit: int | None = None):
 # ---------------------------------------------------------------------------
 
 DATASETS = {
-    "pgps9k":       export_pgps9k,
-    "ai2d":         export_ai2d,
-    "mmmu_pro":     export_mmmu_pro,
-    "docvqa":       export_docvqa,
-    "scienceqa":    export_scienceqa,
-    "realworldqa":  export_realworldqa,
-    "mathverse":    export_mathverse,
-    "hle":          export_hle,
+    "pgps9k":          export_pgps9k,
+    "pgps9k_test":     export_pgps9k_test,
+    "ai2d":            export_ai2d,
+    "mmmu_pro":        export_mmmu_pro,
+    "realworldqa":     export_realworldqa,
+    "mathverse":       export_mathverse,
+    "mathvision":      export_mathvision,
+    "mathvista_gps":   export_mathvista_gps,
+    "geoqa":           export_geoqa,
+    "geometry3k":      export_geometry3k,
 }
 
 
@@ -465,6 +606,8 @@ def main():
         fn = DATASETS[name]
         if name == "pgps9k":
             fn(image_root, train_jsonl, pgps9k_root, limit=args.limit)
+        elif name == "pgps9k_test":
+            fn(image_root, eval_dir, pgps9k_root, limit=args.limit)
         else:
             fn(image_root, eval_dir, limit=args.limit)
     print("\n[DONE] mllm dataset prep")

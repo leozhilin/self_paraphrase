@@ -109,7 +109,8 @@ def build_request(processor, question: str, image_path: str | list | None) -> di
         {"role": "user", "content": content},
     ]
     prompt = processor.apply_chat_template(
-        messages, tokenize=False, add_generation_prompt=True
+        messages, tokenize=False, add_generation_prompt=True,
+        enable_thinking=False,
     )
     req: dict = {"prompt": prompt}
     if img is not None:
@@ -166,8 +167,9 @@ def run_condition(llm, processor, sp, questions, name, lora_request=None,
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--datasets", nargs="+",
-                   default=["ai2d_test", "mmmu_pro", "docvqa", "scienceqa",
-                            "realworldqa", "mathverse", "hle"])
+                   default=["pgps9k_test", "mathverse", "mathvision", "realworldqa",
+                            "mathvista_gps", "geoqa", "geometry3k",
+                            "ai2d_test", "mmmu_pro"])
     p.add_argument("--conditions", nargs="+",
                    default=["base", "raw", "paraphrase", "vanilla"])
     p.add_argument("--limit", type=int, default=None)
@@ -175,8 +177,7 @@ def main():
     p.add_argument("--config", type=str, default=None)
     p.add_argument("--gpu_memory_utilization", type=float, default=0.85)
     p.add_argument("--max_model_len", type=int, default=32768,
-                   help="Must cover both image tokens and the prompt; "
-                        "DocVQA pages can need >16k.")
+                   help="Must cover both image tokens and the prompt.")
     p.add_argument("--max_num_seqs", type=int, default=32)
     p.add_argument("--mm_max_pixels", type=int, default=1280 * 1280,
                    help="Cap each image to this many pixels via the "

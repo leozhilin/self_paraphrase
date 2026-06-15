@@ -49,7 +49,8 @@ def build_request(processor, question: str, image_path: str | None) -> dict:
         {"role": "user", "content": content},
     ]
     prompt = processor.apply_chat_template(
-        messages, tokenize=False, add_generation_prompt=True
+        messages, tokenize=False, add_generation_prompt=True,
+        enable_thinking=False,
     )
     req: dict = {"prompt": prompt}
     if img is not None:

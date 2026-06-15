@@ -60,6 +60,7 @@ def format_example(tokenizer, ex: dict, max_length: int, system_prompt: str,
     ]
     prompt_text = tokenizer.apply_chat_template(
         messages_prompt, tokenize=False, add_generation_prompt=True,
+        enable_thinking=False,
     )
     prompt_len = len(tokenizer(prompt_text, add_special_tokens=False)["input_ids"])
 
@@ -68,6 +69,7 @@ def format_example(tokenizer, ex: dict, max_length: int, system_prompt: str,
     ]
     text = tokenizer.apply_chat_template(
         messages_full, tokenize=False, add_generation_prompt=False,
+        enable_thinking=False,
     )
     enc = tokenizer(text, truncation=True, max_length=max_length, padding=False)
     enc["labels"] = mask_prompt_labels(enc["input_ids"], prompt_len)
