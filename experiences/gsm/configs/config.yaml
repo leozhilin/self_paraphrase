@@ -1,0 +1,60 @@
+# lzl 独立实验配置 — 路径与 Phase B paraphrase 流程一致
+
+model:
+  path: "/data5/lzl/models/Qwen3-4B-Instruct-2507"
+  dtype: "bfloat16"
+
+sampling:
+  G: 32
+  temperature: 0.7
+  top_p: 0.8
+  top_k: 20
+  max_new_tokens: 4096   # unified across rollout & eval (was 1024)
+  batch_size: 32   # = G，每题一次 generate；96GB 单卡可跑满
+
+datasets:
+  gsm8k_cache: "/data5/lzl/hf_datasets"
+  data_cache: "/home/liuyu/Projects/GRPO_research/VCTS/lzl/data/cache"
+
+# manifest / paraphrase 预算（与 sft_pilot_v5 对齐）
+manifest:
+  target_tokens: 1440000   # 480k * 3, aligned with mllm
+  target_nac_pct: 42.0   # non-all-correct bin token 占比
+  ac_max_pct: 0.58       # = 1 - 0.42
+  seed: 2026
+
+paraphrase:
+  n_per: 2
+  batch: 12
+  max_new_tokens: 4096   # unified across all generation steps (was 600)
+  temperature: 0.7
+  top_p: 0.95
+  seed: 2026
+
+sft:
+  epochs: 3
+  lr: 2.0e-5
+  batch_size: 16            # was 1 (GPU idle); seqs are short (p90~383 tok)
+  grad_accum: 1             # effective batch stays 16 (16*1 == 1*16)
+  max_length: 768
+  seed: 42
+
+eval:
+  batch_size: 4
+  max_new_tokens: 4096
+
+paths:
+  vcts_root: "/home/liuyu/Projects/GRPO_research/VCTS"
+  lzl_root: "/home/liuyu/Projects/GRPO_research/VCTS/lzl"
+  rollouts: "/home/liuyu/Projects/GRPO_research/VCTS/lzl/data/rollouts/gsm8k_train_g32.jsonl"
+  raw_jsonl: "/home/liuyu/Projects/GRPO_research/VCTS/lzl/data/sft/raw/raw.jsonl"
+  vanilla_jsonl: "/home/liuyu/Projects/GRPO_research/VCTS/lzl/data/sft/vanilla/vanilla.jsonl"
+  paraphrase_candidates: "/home/liuyu/Projects/GRPO_research/VCTS/lzl/data/cache/paraphrase_candidates.jsonl"
+  paraphrase_tokens: "/home/liuyu/Projects/GRPO_research/VCTS/lzl/data/cache/paraphrase_tokens.jsonl"
+  paraphrase_jsonl: "/home/liuyu/Projects/GRPO_research/VCTS/lzl/data/sft/paraphrase/paraphrase.jsonl"
+  paraphrase_manifest: "/home/liuyu/Projects/GRPO_research/VCTS/lzl/data/sft/paraphrase/manifest.json"
+  raw_manifest: "/home/liuyu/Projects/GRPO_research/VCTS/lzl/data/sft/raw/manifest.json"
+  checkpoint_root: "/data5/lzl/checkpoints"
+  results_root: "/home/liuyu/Projects/GRPO_research/VCTS/lzl/results"
+  eval_cache: "/home/liuyu/Projects/GRPO_research/VCTS/lzl/data/cache/eval"
+  logs: "/home/liuyu/Projects/GRPO_research/VCTS/lzl/logs"
