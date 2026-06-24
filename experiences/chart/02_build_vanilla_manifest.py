@@ -21,12 +21,8 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
-
-os.environ.setdefault("HF_HOME", "/data5/lzl/hf_cache")
-os.environ.setdefault("HF_DATASETS_CACHE", "/data5/lzl/hf_cache")
 
 from transformers import AutoTokenizer  # noqa: E402
 
@@ -51,8 +47,9 @@ def count_chat_tokens(tokenizer, system_prompt: str, question: str,
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--config", type=str,
-                    default="/home/liuyu/Projects/GRPO_research/VCTS/lzl/chart_config.yaml")
+    ap.add_argument("--config", type=str, default=None)
+    ap.add_argument("--limit", type=int, default=None,
+                    help="Cap rows from train JSONL (smoke tests).")
     args = ap.parse_args()
 
     cfg = load_config(args.config)
@@ -69,7 +66,9 @@ def main():
 
     print("\n[1/2] Loading ChartQA train manifest...")
     train_rows = [json.loads(l) for l in train_jsonl.open()]
-    print(f"  loaded {len(train_rows)} questions (full ChartQA train)")
+    if args.limit:
+        train_rows = train_rows[:args.limit]
+    print(f"  loaded {len(train_rows)} questions from {train_jsonl}")
 
     print("\n[2/2] Tokenizing chat-rendered examples (for bookkeeping)...")
     tokenizer = AutoTokenizer.from_pretrained(str(paths.model_path),

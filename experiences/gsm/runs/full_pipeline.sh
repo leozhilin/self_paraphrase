@@ -19,6 +19,8 @@ GPU="${CUDA_VISIBLE_DEVICES:-1}"
 
 export CUDA_VISIBLE_DEVICES="$GPU"
 export LZL_CONFIG="$CONFIG"
+export HF_HOME=$($PY -c "import yaml; print(yaml.safe_load(open('$CONFIG'))['datasets']['gsm8k_cache'])")
+export HF_DATASETS_CACHE="$HF_HOME"
 
 cd "$HERE"
 

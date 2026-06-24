@@ -34,20 +34,25 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # task dir for utils
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))  # lzl/ for paths
 from utils import MLLM_SYSTEM_PROMPT
+from paths import apply_hf_env, load_config
 
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--src", type=str,
-                   default="data/mllm/pgps9k_train_1k_smoke.jsonl",
-                   help="Source MLLM train JSONL (question/answer/image_path).")
+    p.add_argument("--config", type=str, default=None)
+    p.add_argument("--src", type=str, default=None,
+                   help="Source MLLM train JSONL (default: config datasets.train_jsonl).")
     p.add_argument("--limit", type=int, default=None)
     p.add_argument("--output", type=str, default=None)
     p.add_argument("--require_image", action="store_true",
                    help="Drop rows whose image_path is missing on disk.")
     args = p.parse_args()
 
-    src = Path(args.src)
+    default_cfg = Path(__file__).resolve().parent.parent / "configs" / "config.yaml"
+    cfg = load_config(args.config or str(default_cfg))
+    apply_hf_env(cfg)
+
+    src = Path(args.src or cfg["datasets"]["train_jsonl"])
     if not src.exists():
         sys.exit(f"Source not found: {src}")
 
@@ -96,8 +101,10 @@ def main():
     if args.output:
         out = Path(args.output)
     else:
-        suffix = f"_limit{args.limit}" if args.limit else ""
-        out = Path(f"data/grpo/mllm_train{suffix}.jsonl")
+        grpo_root = Path(cfg.get("paths", {}).get(
+            "grpo_data_root", "/data4/FTSO/datasets/mllm/grpo"))
+        suffix = f"_limit{args.limit}" if args.limit else "_full"
+        out = grpo_root / f"mllm_train{suffix}.jsonl"
     out.parent.mkdir(parents=True, exist_ok=True)
 
     with out.open("w") as f:

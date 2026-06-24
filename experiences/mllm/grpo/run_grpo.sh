@@ -1,18 +1,9 @@
 #!/usr/bin/env bash
 # GRPO training (mllm) — base policy = Qwen3.5-4B, enable_thinking=false, single GPU.
 #
-# Reward = mllm_format + mllm_accuracy (same judge as 06_eval_vllm.py).
-# Plugin: experiences/mllm/grpo/rewards.py
-#
 # Usage:
-#   bash experiences/mllm/grpo/run_grpo.sh smoke   # 64 prompts, ~16 steps
-#   bash experiences/mllm/grpo/run_grpo.sh full    # PGPS9K train full (8021)
-#
-# GPU via CUDA_VISIBLE_DEVICES (default 0).
-#
-# Stability: sleep_level=0 + disable mm/prefix caches.  sleep_level=1 causes
-# vLLM colocate sleep/wake to drop multimodal receiver cache while requests
-# still reference stale mm_hash (crash ~step 100+ on vLLM 0.20.x).
+#   bash experiences/mllm/grpo/run_grpo.sh smoke
+#   bash experiences/mllm/grpo/run_grpo.sh full
 set -euo pipefail
 
 MODE="${1:-smoke}"
@@ -22,39 +13,48 @@ GRPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LZL_ROOT="$(cd "$GRPO_DIR/../../.." && pwd)"
 cd "$LZL_ROOT"
 
-MODEL="/data5/lzl/models/Qwen3.5-4B"
+CONFIG="${LZL_CONFIG:-$LZL_ROOT/experiences/mllm/configs/config.yaml}"
+SMOKE_CONFIG="$LZL_ROOT/experiences/mllm/smoke/configs/config_smoke.yaml"
 PLUGIN="$GRPO_DIR/rewards.py"
-CKPT_ROOT="/data5/lzl/checkpoints"
 LOG_DIR="$LZL_ROOT/logs/mllm_grpo"
 mkdir -p "$LOG_DIR"
 
 PY="/data2/anaconda3/envs/vcts/bin/python"
 SWIFT="/data2/anaconda3/envs/vcts/bin/swift"
 
-# ---- mode-specific knobs ---------------------------------------------------
+read_cfg() {
+  local key="$1" cfg="$2"
+  $PY -c "import yaml; c=yaml.safe_load(open('$cfg')); print(c$key)"
+}
+
+MODEL="$(read_cfg "['model']['path']" "$CONFIG")"
+CKPT_ROOT="/data5/lzl/checkpoints"
+export HF_HOME="$(read_cfg "['datasets']['hf_cache']" "$CONFIG")"
+export HF_DATASETS_CACHE="$HF_HOME"
+
 if [[ "$MODE" == "smoke" ]]; then
   DATA_LIMIT_ARGS="--limit 64"
-  SRC_JSONL="$LZL_ROOT/data/mllm/pgps9k_train_1k_smoke.jsonl"
-  DATA_FILE="$LZL_ROOT/data/grpo/mllm_train_limit64.jsonl"
+  SRC_JSONL="$(read_cfg "['datasets']['train_jsonl']" "$SMOKE_CONFIG")"
+  DATA_FILE="/data4/FTSO/datasets/mllm/grpo/mllm_train_limit64.jsonl"
   MAX_STEPS=16
   SAVE_STEPS=16
   OUTPUT_DIR="$CKPT_ROOT/mllm_grpo_smoke"
   NUM_GEN=4
 else
   DATA_LIMIT_ARGS=""
-  SRC_JSONL="$LZL_ROOT/data/mllm/pgps9k_train.jsonl"
-  DATA_FILE="$LZL_ROOT/data/grpo/mllm_train_full.jsonl"
+  SRC_JSONL="$(read_cfg "['datasets']['train_jsonl']" "$CONFIG")"
+  DATA_FILE="/data4/FTSO/datasets/mllm/grpo/mllm_train_full.jsonl"
   MAX_STEPS=-1
   SAVE_STEPS=200
   OUTPUT_DIR="$CKPT_ROOT/mllm_grpo"
   NUM_GEN=4
 fi
 
-# ---- build the GRPO prompt dataset -----------------------------------------
-if [[ ! -f "$DATA_FILE" ]] || [[ "$(wc -l < "$DATA_FILE")" -lt 8000 ]]; then
+if [[ ! -f "$DATA_FILE" ]] || [[ "$(wc -l < "$DATA_FILE")" -lt 8000 && "$MODE" == "full" ]]; then
   echo "[mllm-grpo] building dataset -> $DATA_FILE (from $SRC_JSONL)"
   $PY "$GRPO_DIR/07_build_grpo_dataset.py" \
-      --src "$SRC_JSONL" $DATA_LIMIT_ARGS --output "$DATA_FILE" --require_image
+      --config "$CONFIG" --src "$SRC_JSONL" $DATA_LIMIT_ARGS \
+      --output "$DATA_FILE" --require_image
 fi
 
 GEN_BATCH=$NUM_GEN

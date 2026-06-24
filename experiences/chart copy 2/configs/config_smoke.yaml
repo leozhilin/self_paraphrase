@@ -1,0 +1,60 @@
+task: chart
+model:
+  path: /data4/models/Qwen3.5-4B
+  dtype: bfloat16
+sampling:
+  G: 4
+  temperature: 0.7
+  top_p: 0.8
+  top_k: 20
+  max_new_tokens: 512
+  batch_size: 4
+datasets:
+  gsm8k_cache: /data5/lzl/hf_datasets
+  data_cache: /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/chart_qwen35_smoke/cache
+  train_jsonl: /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/chart/chartqa_train.jsonl
+manifest:
+  target_tokens: 8000
+  target_nac_pct: 42.0
+  ac_max_pct: 0.58
+  seed: 2026
+paraphrase:
+  n_per: 1
+  batch: 4
+  max_new_tokens: 512
+  temperature: 0.7
+  top_p: 0.95
+  seed: 2026
+sft:
+  tuning: full
+  lora:
+    r: 16
+    alpha: 32
+    dropout: 0.05
+  epochs: 1
+  lr: 2.0e-05
+  batch_size: 1
+  grad_accum: 2
+  max_length: 2048
+  seed: 42
+eval:
+  batch_size: 2
+  max_new_tokens: 512
+  limit: 16
+paths:
+  vcts_root: /home/liuyu/Projects/GRPO_research/VCTS
+  lzl_root: /home/liuyu/Projects/GRPO_research/VCTS/lzl
+  rollouts: /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/chart_qwen35_smoke/rollouts/chartqa_train_g4_smoke.jsonl
+  raw_jsonl: /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/chart_qwen35_smoke/sft/raw/raw.jsonl
+  vanilla_jsonl: /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/chart_qwen35_smoke/sft/vanilla/vanilla.jsonl
+  paraphrase_candidates: /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/chart_qwen35_smoke/cache/paraphrase_candidates.jsonl
+  paraphrase_tokens: /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/chart_qwen35_smoke/cache/paraphrase_tokens.jsonl
+  paraphrase_jsonl: /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/chart_qwen35_smoke/sft/paraphrase/paraphrase.jsonl
+  paraphrase_manifest: /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/chart_qwen35_smoke/sft/paraphrase/manifest.json
+  raw_manifest: /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/chart_qwen35_smoke/sft/raw/manifest.json
+  checkpoint_root: /data4/models/Qwen3.5-4B/checkpoints/chart_smoke
+  results_root: /home/liuyu/Projects/GRPO_research/VCTS/lzl/results/chart_qwen35_smoke
+  eval_cache: /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/chart/eval
+  logs: /home/liuyu/Projects/GRPO_research/VCTS/lzl/logs/chart_qwen35_smoke
+  chart_eval:
+    chartqa_test: /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/chart/eval/chartqa_test_eval.jsonl

@@ -12,19 +12,16 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
 
-os.environ.setdefault("HF_HOME", "/data5/lzl/hf_cache")
-os.environ.setdefault("HF_DATASETS_CACHE", "/data5/lzl/hf_cache")
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # this dir for utils
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))  # lzl/ for paths
+from paths import apply_hf_env, ensure_dirs, get_paths, load_config  # noqa: E402
 
 from transformers import AutoTokenizer  # noqa: E402
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))  # this dir for utils
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))  # lzl/ for paths
 from utils import MLLM_SYSTEM_PROMPT  # noqa: E402
-from paths import ensure_dirs, get_paths, load_config  # noqa: E402
 
 
 def count_chat_tokens(tokenizer, system_prompt: str, question: str,
@@ -47,6 +44,7 @@ def main():
     args = ap.parse_args()
 
     cfg = load_config(args.config)
+    apply_hf_env(cfg)
     paths = ensure_dirs(get_paths(cfg))
 
     train_jsonl = Path(cfg["datasets"]["train_jsonl"])

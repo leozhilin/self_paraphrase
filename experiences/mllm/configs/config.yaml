@@ -1,7 +1,9 @@
 task: mllm
 
+ftso_root: /data4/FTSO
+
 model:
-  path: /data5/lzl/models/Qwen3.5-4B
+  path: /data4/FTSO/models/qwen3.5-4b
   dtype: bfloat16
 
 sampling:
@@ -13,13 +15,12 @@ sampling:
   batch_size: 32             # vllm uses n=G in one prefix-cached request
 
 datasets:
-  hf_cache: /data5/lzl/hf_cache
-  gsm8k_cache: /data5/lzl/hf_cache         # alias kept for paths.py compatibility
-  data_cache: /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/mllm/cache
-  # PGPS9K train drives SFT; eval benchmarks are prepared separately.
-  pgps9k_root: /data5/lzl/datasets/pgps9k/extracted/PGPS9K
-  train_jsonl: /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/mllm/pgps9k_train.jsonl
-  image_root: /data5/lzl/datasets/mllm           # all images materialised here
+  hf_cache: /data4/FTSO/datasets/mllm/hf_cache
+  gsm8k_cache: /data4/FTSO/datasets/mllm/hf_cache         # alias kept for paths.py compatibility
+  data_cache: /data4/FTSO/datasets/mllm/processed/cache
+  pgps9k_root: /data4/FTSO/datasets/mllm/raw/pgps9k/extracted/PGPS9K
+  train_jsonl: /data4/FTSO/datasets/mllm/processed/pgps9k_train.jsonl
+  image_root: /data4/FTSO/datasets/mllm/images
 
 manifest:
   target_tokens: 1440000   # aligned with gsm/chart and mllm-smoke
@@ -28,13 +29,9 @@ manifest:
   seed: 2026
 
 paraphrase:
-  n_per: 4                    # MLLM: raw traces are long (~1141 tok) -> only 421
-                             # selected at the 480k budget; paraphrases shrink to
-                             # ~1/3 length, so n_per=2 (842 rewrites) can't fill
-                             # the 480k paraphrase budget. n_per=4 (~1684 rewrites)
-                             # provides enough tokens to token-match raw.
+  n_per: 4
   batch: 8
-  max_new_tokens: 4096       # unified across all generation steps (was 2560)
+  max_new_tokens: 4096
   temperature: 0.7
   top_p: 0.95
   seed: 2026
@@ -42,41 +39,42 @@ paraphrase:
 sft:
   epochs: 3
   lr: 2.0e-05
-  batch_size: 2              # vision SFT: 2× images/step (effective batch = batch_size × grad_accum)
+  batch_size: 2
   grad_accum: 4
-  max_length: 4096           # vision: image (~1600 tok) + question + trace (~1800)
+  max_length: 4096
   seed: 42
 
 eval:
-  mode: vision               # text | vision
-  batch_size: 1              # vision eval: one image per forward pass
-  max_new_tokens: 4096       # unified across rollout & eval (was 8192)
-  max_num_seqs: 64           # vLLM continuous batching concurrency
+  mode: vision
+  batch_size: 1
+  max_new_tokens: 4096
+  max_num_seqs: 64
   gpu_memory_utilization: 0.92
   limit: null
 
 paths:
   vcts_root: /home/liuyu/Projects/GRPO_research/VCTS
   lzl_root: /home/liuyu/Projects/GRPO_research/VCTS/lzl
-  rollouts: /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/mllm/rollouts/pgps9k_train_g32.jsonl
-  raw_jsonl: /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/mllm/sft/raw/raw.jsonl
-  vanilla_jsonl: /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/mllm/sft/vanilla/vanilla.jsonl
-  paraphrase_candidates: /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/mllm/cache/paraphrase_candidates.jsonl
-  paraphrase_tokens: /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/mllm/cache/paraphrase_tokens.jsonl
-  paraphrase_jsonl: /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/mllm/sft/paraphrase/paraphrase.jsonl
-  paraphrase_manifest: /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/mllm/sft/paraphrase/manifest.json
-  raw_manifest: /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/mllm/sft/raw/manifest.json
+  rollouts: /data4/FTSO/datasets/mllm/processed/rollouts/pgps9k_train_g32.jsonl
+  raw_jsonl: /data4/FTSO/datasets/mllm/processed/sft/raw/raw.jsonl
+  vanilla_jsonl: /data4/FTSO/datasets/mllm/processed/sft/vanilla/vanilla.jsonl
+  paraphrase_candidates: /data4/FTSO/datasets/mllm/processed/cache/paraphrase_candidates.jsonl
+  paraphrase_tokens: /data4/FTSO/datasets/mllm/processed/cache/paraphrase_tokens.jsonl
+  paraphrase_jsonl: /data4/FTSO/datasets/mllm/processed/sft/paraphrase/paraphrase.jsonl
+  paraphrase_manifest: /data4/FTSO/datasets/mllm/processed/sft/paraphrase/manifest.json
+  raw_manifest: /data4/FTSO/datasets/mllm/processed/sft/raw/manifest.json
   checkpoint_root: /data5/lzl/checkpoints/mllm_paraphrase_pgps9k
   results_root: /home/liuyu/Projects/GRPO_research/VCTS/lzl/results/mllm
-  eval_cache: /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/mllm/eval
+  eval_cache: /data4/FTSO/datasets/mllm/processed/eval
   logs: /home/liuyu/Projects/GRPO_research/VCTS/lzl/logs/mllm
+  grpo_data_root: /data4/FTSO/datasets/mllm/grpo
   mllm_eval:
-    pgps9k_test:   /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/mllm/eval/pgps9k_test_eval.jsonl
-    mathverse:     /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/mllm/eval/mathverse_eval.jsonl
-    mathvision:    /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/mllm/eval/mathvision_eval.jsonl
-    realworldqa:   /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/mllm/eval/realworldqa_eval.jsonl
-    mathvista_gps: /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/mllm/eval/mathvista_gps_eval.jsonl
-    geoqa:         /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/mllm/eval/geoqa_test_eval.jsonl
-    geometry3k:    /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/mllm/eval/geometry3k_test_eval.jsonl
-    ai2d_test:     /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/mllm/eval/ai2d_test_eval.jsonl
-    mmmu_pro:      /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/mllm/eval/mmmu_pro_eval.jsonl
+    pgps9k_test:   /data4/FTSO/datasets/mllm/processed/eval/pgps9k_test_eval.jsonl
+    mathverse:     /data4/FTSO/datasets/mllm/processed/eval/mathverse_eval.jsonl
+    mathvision:    /data4/FTSO/datasets/mllm/processed/eval/mathvision_eval.jsonl
+    realworldqa:   /data4/FTSO/datasets/mllm/processed/eval/realworldqa_eval.jsonl
+    mathvista_gps: /data4/FTSO/datasets/mllm/processed/eval/mathvista_gps_eval.jsonl
+    geoqa:         /data4/FTSO/datasets/mllm/processed/eval/geoqa_test_eval.jsonl
+    geometry3k:    /data4/FTSO/datasets/mllm/processed/eval/geometry3k_test_eval.jsonl
+    ai2d_test:     /data4/FTSO/datasets/mllm/processed/eval/ai2d_test_eval.jsonl
+    mmmu_pro:      /data4/FTSO/datasets/mllm/processed/eval/mmmu_pro_eval.jsonl

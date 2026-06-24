@@ -12,16 +12,18 @@ cd "$LZL_ROOT"
 
 PY=/data2/anaconda3/envs/vcts/bin/python
 LOG="$LZL_ROOT/logs/grpo"
+CONFIG="$LZL_ROOT/experiences/gsm/configs/config.yaml"
 CKPT_ROOT=/data5/lzl/checkpoints/grpo
+GRPO_MODEL=$($PY -c "import yaml; print(yaml.safe_load(open('$CONFIG'))['model']['path'])")
 TS=$(date +%Y%m%d_%H%M%S)
 mkdir -p "$LOG"
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"
 export MASTER_PORT="${MASTER_PORT:-29501}"
-export LZL_CONFIG="$LZL_ROOT/experiences/gsm/configs/config.yaml"
+export LZL_CONFIG="$CONFIG"
 export PYTHONPATH="$LZL_ROOT${PYTHONPATH:+:$PYTHONPATH}"
-export HF_HOME=/data5/lzl/hf_cache
-export HF_DATASETS_CACHE=/data5/lzl/hf_datasets
+export HF_HOME=$($PY -c "import yaml; print(yaml.safe_load(open('$CONFIG'))['datasets']['gsm8k_cache'])")
+export HF_DATASETS_CACHE="$HF_HOME"
 export PYTHONUNBUFFERED=1
 
 TRAIN_LOG="$LOG/full_gpu1.out"

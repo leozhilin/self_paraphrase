@@ -28,7 +28,7 @@ from datasets import load_dataset
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # task dir for utils
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))  # lzl/ for paths
 from utils import ANSWER_FORMAT_HINT, GSM_SYSTEM_PROMPT
-from paths import ensure_dirs, get_paths, load_config
+from paths import ensure_dirs, get_paths, load_config, apply_hf_env
 
 
 def build_rows(questions: list[dict]) -> list[dict]:
@@ -57,6 +57,7 @@ def main():
     args = p.parse_args()
 
     cfg = load_config(args.config)
+    apply_hf_env(cfg)
     paths = ensure_dirs(get_paths(cfg))
 
     ds = load_dataset(
@@ -75,8 +76,10 @@ def main():
     if args.output:
         out = Path(args.output)
     else:
+        grpo_root = Path(cfg.get("paths", {}).get(
+            "grpo_data_root", "/data4/FTSO/datasets/gsm/grpo"))
         suffix = f"_limit{args.limit}" if args.limit else ""
-        out = paths.lzl_root / "data" / "grpo" / f"gsm8k_{args.split}{suffix}.jsonl"
+        out = grpo_root / f"gsm8k_{args.split}{suffix}.jsonl"
     out.parent.mkdir(parents=True, exist_ok=True)
 
     with out.open("w") as f:

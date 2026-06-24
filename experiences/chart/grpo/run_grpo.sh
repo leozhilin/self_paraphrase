@@ -1,59 +1,58 @@
 #!/usr/bin/env bash
-# GRPO training (chart) — base policy = Qwen3-4B-Instruct-2507 (text-only,
-# table given as text in the question), single GPU.
-#
-# Reward = chart_format (Final Answer: <x> well-formed) + chart_accuracy
-# (matches gold via chart_answers_match, same judge as 06_eval_chart).
-# Plugin: scripts/grpo_chart_rewards.py.
-# vLLM colocate mode: generation + training share one GPU.
+# GRPO training (chart) — base policy from chart_config.yaml (Qwen3-4B).
 #
 # Usage:
-#   bash run_chart_grpo.sh smoke      # 256 prompts, ~30 steps, sanity
-#   bash run_chart_grpo.sh full       # full ChartQA train split (~28k)
-#
-# GPU is selected via CUDA_VISIBLE_DEVICES (default 1).
+#   bash experiences/chart/grpo/run_grpo.sh smoke
+#   bash experiences/chart/grpo/run_grpo.sh full
 set -euo pipefail
 
 MODE="${1:-smoke}"
 GPU="${CUDA_VISIBLE_DEVICES:-1}"
 
-LZL_ROOT="/home/liuyu/Projects/GRPO_research/VCTS/lzl"
+GRPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LZL_ROOT="$(cd "$GRPO_DIR/../../.." && pwd)"
 cd "$LZL_ROOT"
 
-MODEL="/data5/lzl/models/Qwen3-4B-Instruct-2507"
-PLUGIN="$LZL_ROOT/experiences/chart/grpo/rewards.py"
-CKPT_ROOT="/data5/lzl/checkpoints"
+CONFIG="${LZL_CONFIG:-$LZL_ROOT/chart_config.yaml}"
+PLUGIN="$GRPO_DIR/rewards.py"
 LOG_DIR="$LZL_ROOT/logs/chart_grpo"
 mkdir -p "$LOG_DIR"
 
 PY="/data2/anaconda3/envs/vcts/bin/python"
 SWIFT="/data2/anaconda3/envs/vcts/bin/swift"
 
-# ---- mode-specific knobs ---------------------------------------------------
+read_cfg() {
+  local key="$1" cfg="$2"
+  $PY -c "import yaml; c=yaml.safe_load(open('$cfg')); print(c$key)"
+}
+
+MODEL="$(read_cfg "['model']['path']" "$CONFIG")"
+CKPT_ROOT="$(read_cfg "['paths']['checkpoint_root']" "$CONFIG")"
+export HF_HOME="$(read_cfg "['datasets']['gsm8k_cache']" "$CONFIG")"
+export HF_DATASETS_CACHE="$HF_HOME"
+GRPO_ROOT="$(read_cfg "['paths']['grpo_data_root']" "$CONFIG")"
+
 if [[ "$MODE" == "smoke" ]]; then
-  DATA_LIMIT_ARGS="--limit 256"
-  DATA_FILE="$LZL_ROOT/data/grpo/chart_train_limit256.jsonl"
+  DATA_LIMIT_ARGS="--limit 256 --config $CONFIG"
+  DATA_FILE="$GRPO_ROOT/chart_train_limit256.jsonl"
   MAX_STEPS=30
   SAVE_STEPS=30
   OUTPUT_DIR="$CKPT_ROOT/chart_grpo_smoke"
   NUM_GEN=8
 else
-  DATA_LIMIT_ARGS=""
-  DATA_FILE="$LZL_ROOT/data/grpo/chart_train.jsonl"
+  DATA_LIMIT_ARGS="--config $CONFIG"
+  DATA_FILE="$GRPO_ROOT/chart_train.jsonl"
   MAX_STEPS=-1
   SAVE_STEPS=200
   OUTPUT_DIR="$CKPT_ROOT/chart_grpo"
   NUM_GEN=8
 fi
 
-# ---- build the GRPO prompt dataset (idempotent) ----------------------------
 if [[ ! -f "$DATA_FILE" ]]; then
   echo "[chart-grpo] building dataset -> $DATA_FILE"
-  $PY "$LZL_ROOT/experiences/chart/grpo/07_build_grpo_dataset.py" $DATA_LIMIT_ARGS \
-      --output "$DATA_FILE"
+  $PY "$GRPO_DIR/07_build_grpo_dataset.py" $DATA_LIMIT_ARGS --output "$DATA_FILE"
 fi
 
-# generation_batch_size must be a multiple of num_generations.
 GEN_BATCH=$NUM_GEN
 
 echo "[chart-grpo] mode=$MODE gpu=$GPU model=$MODEL data=$DATA_FILE out=$OUTPUT_DIR"

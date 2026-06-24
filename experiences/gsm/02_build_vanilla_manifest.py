@@ -31,10 +31,19 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # this dir for utils
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))  # lzl/ for paths
+from paths import add_vcts_to_syspath, apply_hf_env, ensure_dirs, get_paths, load_config  # noqa: E402
+
+add_vcts_to_syspath()
+apply_hf_env(load_config())
+
+from datasets import load_dataset  # noqa: E402
+from transformers import AutoTokenizer  # noqa: E402
 
 # GSM8K's gold `answer` field embeds OpenAI's calculator-API placeholders of the
 # form `<<expr=value>>value` (e.g. `<<48-3-4=41>>41`). These were never meant to
@@ -60,22 +69,9 @@ def _strip_calc_markup(answer: str) -> str:
     cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
     return cleaned.strip()
 
-# Use shared HF cache
-os.environ.setdefault("HF_HOME", "/data5/lzl/hf_cache")
-os.environ.setdefault("HF_DATASETS_CACHE", "/data5/lzl/hf_cache")
 
-from datasets import load_dataset  # noqa: E402
-from transformers import AutoTokenizer  # noqa: E402
-
-sys.path.insert(0, str(Path(__file__).resolve().parent))  # this dir for utils
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))  # lzl/ for paths
-from paths import add_vcts_to_syspath, ensure_dirs, get_paths, load_config  # noqa: E402
-
-add_vcts_to_syspath()
 # Unified Final-Answer template (shared with 01 rollout / 03 paraphrase /
-# 05 SFT / 06 eval, all sourced from gsm_utils). Previously vanilla used the
-# legacy '#### <answer>' format + a plain system prompt, mismatching the
-# Final-Answer prompt used everywhere else.
+# 05 SFT / 06 eval, all sourced from gsm_utils).
 from utils import ANSWER_FORMAT_HINT, GSM_SYSTEM_PROMPT  # noqa: E402
 
 SYSTEM_PROMPT_MATH = GSM_SYSTEM_PROMPT
@@ -98,9 +94,12 @@ def count_chat_tokens(tokenizer, system_prompt: str, question: str,
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", type=str, default=None)
+    ap.add_argument("--limit", type=int, default=None,
+                    help="Cap rows from HF train split (smoke tests).")
     args = ap.parse_args()
 
     cfg = load_config(args.config)
+    apply_hf_env(cfg)
     paths = ensure_dirs(get_paths(cfg))
 
     out_path = paths.vanilla_jsonl
@@ -109,7 +108,8 @@ def main():
 
     print("\n[1/2] Loading GSM8K train split (gsm8k/main)...")
     ds = load_dataset("gsm8k", "main", split="train", cache_dir=str(paths.hf_datasets))
-    print(f"  loaded {len(ds)} questions (full training set)")
+    n_rows = min(len(ds), args.limit) if args.limit else len(ds)
+    print(f"  loaded {len(ds)} questions, writing {n_rows}")
 
     print("\n[2/2] Tokenizing chat-rendered examples (for bookkeeping)...")
     tokenizer = AutoTokenizer.from_pretrained(str(paths.model_path), trust_remote_code=True)
@@ -118,8 +118,11 @@ def main():
 
     total_tokens = 0
     n_stripped = 0
+    written = 0
     with out_path.open("w") as f:
         for i, ex in enumerate(ds):
+            if args.limit and i >= args.limit:
+                break
             q = str(ex["question"]).strip()
             a_raw = str(ex["answer"]).strip()  # original "<reasoning with <<>> markup>\n#### N"
             a = _strip_calc_markup(a_raw)      # natural-language reasoning + "#### N"
@@ -140,10 +143,11 @@ def main():
                 "tokens": n_tok,
                 "bin": "vanilla",
             }, ensure_ascii=False) + "\n")
+            written += 1
 
-    print(f"  wrote {len(ds)} examples, total ~{total_tokens} tokens "
-          f"(avg {total_tokens/len(ds):.1f} tokens/example)")
-    print(f"  stripped <<expr=value>> calculator markup from {n_stripped}/{len(ds)} examples")
+    print(f"  wrote {written} examples, total ~{total_tokens} tokens "
+          f"(avg {total_tokens/written:.1f} tokens/example)")
+    print(f"  stripped <<expr=value>> calculator markup from {n_stripped}/{written} examples")
     print(f"  → {out_path}")
 
 

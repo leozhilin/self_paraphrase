@@ -14,15 +14,16 @@ cd "$LZL_ROOT"
 PY=/data2/anaconda3/envs/vcts/bin/python
 LOG="$LZL_ROOT/logs/mllm_grpo"
 CKPT_ROOT=/data5/lzl/checkpoints/mllm_grpo
-GRPO_MODEL=/data5/lzl/models/Qwen3.5-4B
+CONFIG="$LZL_ROOT/experiences/mllm/configs/config.yaml"
+GRPO_MODEL=$($PY -c "import yaml; c=yaml.safe_load(open('$CONFIG')); print(c['model']['path'])")
 TS=$(date +%Y%m%d_%H%M%S)
 mkdir -p "$LOG"
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
-export LZL_CONFIG="$LZL_ROOT/experiences/mllm/configs/config.yaml"
+export LZL_CONFIG="$CONFIG"
 export PYTHONPATH="$LZL_ROOT${PYTHONPATH:+:$PYTHONPATH}"
-export HF_HOME=/data5/lzl/hf_cache
-export HF_DATASETS_CACHE=/data5/lzl/hf_cache
+export HF_HOME=$($PY -c "import yaml; c=yaml.safe_load(open('$CONFIG')); print(c['datasets']['hf_cache'])")
+export HF_DATASETS_CACHE="$HF_HOME"
 export PYTHONUNBUFFERED=1
 
 TRAIN_LOG="$LOG/full.out"

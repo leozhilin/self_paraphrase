@@ -16,8 +16,8 @@ Images are materialised under ``<image_root>/<dataset>/<question_id>.png`` so
 that downstream pipeline (rollout / paraphrase / eval) can load them by path
 without re-decoding from HF cache.
 
-Raw HF caches land under ``/data5/lzl/hf_cache``; materialised images under
-``/data5/lzl/datasets/mllm``; eval JSONL under ``data/mllm/eval/``.
+Raw HF caches and materialised images come from config (``datasets.hf_cache``,
+``datasets.image_root``); eval JSONL under ``paths.eval_cache``.
 """
 
 from __future__ import annotations
@@ -34,17 +34,14 @@ import sys
 from pathlib import Path
 from typing import Any
 
-# ---- HF cache --------------------------------------------------------------
-os.environ.setdefault("HF_HOME", "/data5/lzl/hf_cache")
-os.environ.setdefault("HF_DATASETS_CACHE", "/data5/lzl/hf_cache")
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # this dir for utils
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))  # lzl/ for paths
+from paths import apply_hf_env, ensure_dirs, get_paths, load_config      # noqa: E402
 
 from datasets import load_dataset                                     # noqa: E402
 from PIL import Image                                                  # noqa: E402
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))  # this dir for utils
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))  # lzl/ for paths
 from utils import render_mc_question                              # noqa: E402
-from paths import ensure_dirs, get_paths, load_config                  # noqa: E402
 
 LETTERS = "ABCDEFGHIJ"
 
@@ -581,14 +578,17 @@ DATASETS = {
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--config", default="/home/liuyu/Projects/GRPO_research/VCTS/lzl/mllm_config.yaml")
+    p.add_argument("--config", default=None,
+                   help="Config yaml (default: experiences/mllm/configs/config.yaml)")
     p.add_argument("--only", nargs="+", choices=list(DATASETS.keys()),
                    help="If set, only run these dataset builders.")
     p.add_argument("--limit", type=int, default=None,
                    help="Per-dataset row cap (smoke testing).")
     args = p.parse_args()
 
-    cfg = load_config(args.config)
+    default_cfg = Path(__file__).resolve().parent / "configs" / "config.yaml"
+    cfg = load_config(args.config or str(default_cfg))
+    apply_hf_env(cfg)
     paths = ensure_dirs(get_paths(cfg))
     image_root = Path(cfg["datasets"]["image_root"])
     eval_dir = paths.eval_cache
@@ -598,7 +598,7 @@ def main():
     pgps9k_root = Path(
         cfg["datasets"].get(
             "pgps9k_root",
-            "/data5/lzl/datasets/pgps9k/extracted/PGPS9K",
+            "/data4/FTSO/datasets/mllm/raw/pgps9k/extracted/PGPS9K",
         )
     )
 

@@ -1,58 +1,75 @@
+# Chart Qwen3.5-4B full pipeline — data on /data4/FTSO
 task: chart
+
+ftso_root: /data4/FTSO
+
 model:
-  path: /data5/lzl/models/Qwen3-4B-Instruct-2507
+  path: /data4/FTSO/models/qwen3.5-4b
   dtype: bfloat16
+
 sampling:
   G: 32
   temperature: 0.7
   top_p: 0.8
   top_k: 20
-  max_new_tokens: 4096   # unified across rollout & eval (was 512)
+  max_new_tokens: 4096
   batch_size: 32
+
 datasets:
-  gsm8k_cache: /data5/lzl/hf_datasets
-  data_cache: /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/chart/cache
-  train_jsonl: /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/chart/chartqa_train.jsonl
+  gsm8k_cache: /data4/FTSO/datasets/gsm/hf_datasets
+  data_cache: /data4/FTSO/datasets/chart/processed/chart_qwen35/cache
+  train_jsonl: /data4/FTSO/datasets/chart/processed/chart/chartqa_train.jsonl
+
 manifest:
-  target_tokens: 1440000   # 480k * 3, aligned with gsm/mllm
+  target_tokens: 1440000
   target_nac_pct: 42.0
   ac_max_pct: 0.58
   seed: 2026
+
 paraphrase:
   n_per: 2
   batch: 8
-  max_new_tokens: 4096   # unified across all generation steps (was 600)
+  max_new_tokens: 4096
   temperature: 0.7
   top_p: 0.95
   seed: 2026
+
 sft:
+  tuning: full
+  lora:
+    r: 16
+    alpha: 32
+    dropout: 0.05
   epochs: 3
   lr: 2.0e-05
-  batch_size: 1
-  grad_accum: 8
-  max_length: 1024
+  batch_size: 2
+  grad_accum: 4
+  max_length: 4096
   seed: 42
+
 eval:
   batch_size: 4
   max_new_tokens: 4096
   limit: null
+
 paths:
   vcts_root: /home/liuyu/Projects/GRPO_research/VCTS
   lzl_root: /home/liuyu/Projects/GRPO_research/VCTS/lzl
-  rollouts: /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/chart/rollouts/chartqa_train_g32.jsonl
-  raw_jsonl: /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/chart/sft/raw/raw.jsonl
-  vanilla_jsonl: /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/chart/sft/vanilla/vanilla.jsonl
-  paraphrase_candidates: /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/chart/cache/paraphrase_candidates.jsonl
-  paraphrase_tokens: /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/chart/cache/paraphrase_tokens.jsonl
-  paraphrase_jsonl: /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/chart/sft/paraphrase/paraphrase.jsonl
-  paraphrase_manifest: /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/chart/sft/paraphrase/manifest.json
-  raw_manifest: /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/chart/sft/raw/manifest.json
-  checkpoint_root: /data5/lzl/checkpoints/chart_paraphrase
-  results_root: /home/liuyu/Projects/GRPO_research/VCTS/lzl/results/chart
-  eval_cache: /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/chart/eval
-  logs: /home/liuyu/Projects/GRPO_research/VCTS/lzl/logs/chart
+  rollouts: /data4/FTSO/datasets/chart/processed/chart_qwen35/rollouts/chartqa_train_g32.jsonl
+  raw_jsonl: /data4/FTSO/datasets/chart/processed/chart_qwen35/sft/raw/raw.jsonl
+  vanilla_jsonl: /data4/FTSO/datasets/chart/processed/chart_qwen35/sft/vanilla/vanilla.jsonl
+  paraphrase_candidates: /data4/FTSO/datasets/chart/processed/chart_qwen35/cache/paraphrase_candidates.jsonl
+  paraphrase_tokens: /data4/FTSO/datasets/chart/processed/chart_qwen35/cache/paraphrase_tokens.jsonl
+  paraphrase_jsonl: /data4/FTSO/datasets/chart/processed/chart_qwen35/sft/paraphrase/paraphrase.jsonl
+  paraphrase_manifest: /data4/FTSO/datasets/chart/processed/chart_qwen35/sft/paraphrase/manifest.json
+  raw_manifest: /data4/FTSO/datasets/chart/processed/chart_qwen35/sft/raw/manifest.json
+  checkpoint_root: /data4/FTSO/checkpoints/chart_qwen35
+  results_root: /home/liuyu/Projects/GRPO_research/VCTS/lzl/results/chart_qwen35
+  eval_cache: /data4/FTSO/datasets/chart/processed/chart/eval
+  logs: /home/liuyu/Projects/GRPO_research/VCTS/lzl/logs/chart_qwen35
+  grpo_data_root: /data4/FTSO/datasets/chart/grpo
   chart_eval:
-    plotqa: /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/chart/eval/plotqa_eval_5k.jsonl
-    tabmwp: /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/chart/eval/tabmwp_eval.jsonl
-    finqa: /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/chart/eval/finqa_eval.jsonl
-    chartqa_test: /home/liuyu/Projects/GRPO_research/VCTS/lzl/data/chart/eval/chartqa_test_eval.jsonl
+    plotqa: /data4/FTSO/datasets/chart/processed/chart/eval/plotqa_eval_5k.jsonl
+    tabmwp: /data4/FTSO/datasets/chart/processed/chart/eval/tabmwp_eval.jsonl
+    finqa: /data4/FTSO/datasets/chart/processed/chart/eval/finqa_eval.jsonl
+    chartqa_test: /data4/FTSO/datasets/chart/processed/chart/eval/chartqa_test_eval.jsonl
